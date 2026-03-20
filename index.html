@@ -692,6 +692,22 @@
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ─── AI OPTIONS ─── */
+  .ai-option {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ai-option:hover { border-color: var(--red); }
+  .ai-option.selected { border-color: var(--red); background: rgba(232,21,27,0.1); }
+  .ai-icon { font-size: 22px; margin-bottom: 4px; }
+  .ai-name { font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 1px; color: var(--text); }
+  .ai-sub { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: 2px; }
+
   /* ─── API MODAL ─── */
   .modal-overlay {
     display: none;
@@ -1299,23 +1315,40 @@
 <div class="modal-overlay" id="apiModal">
   <div class="modal">
     <div class="modal-title">🔑 API KEY AYARI</div>
-    <div class="modal-sub">
-      Yapay zeka özelliğini aktif etmek için Anthropic API anahtarın gerekiyor.<br>
-      Ücretsiz almak için: <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+    <div class="modal-sub">Kullanmak istediğin yapay zekayı seç ve API key'ini gir.</div>
+
+    <!-- AI Seçimi -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
+      <div class="ai-option selected" onclick="selectAI('claude')" id="opt-claude">
+        <div class="ai-icon">🤖</div>
+        <div class="ai-name">Claude</div>
+        <div class="ai-sub">Anthropic</div>
+      </div>
+      <div class="ai-option" onclick="selectAI('gemini')" id="opt-gemini">
+        <div class="ai-icon">✨</div>
+        <div class="ai-name">Gemini</div>
+        <div class="ai-sub">Google</div>
+      </div>
+      <div class="ai-option" onclick="selectAI('openai')" id="opt-openai">
+        <div class="ai-icon">⚡</div>
+        <div class="ai-name">ChatGPT</div>
+        <div class="ai-sub">OpenAI</div>
+      </div>
     </div>
 
-    <div class="api-steps">
+    <!-- Dinamik adımlar -->
+    <div class="api-steps" id="apiSteps">
       <div class="api-step">
         <div class="step-num">1</div>
-        <div class="step-text"><strong>console.anthropic.com</strong> adresine git ve ücretsiz hesap aç</div>
+        <div class="step-text" id="step1text"><strong>console.anthropic.com</strong> adresine git ve ücretsiz hesap aç</div>
       </div>
       <div class="api-step">
         <div class="step-num">2</div>
-        <div class="step-text">Sol menüden <strong>"API Keys"</strong> seç → <strong>"Create Key"</strong> tıkla</div>
+        <div class="step-text" id="step2text">Sol menüden <strong>"API Keys"</strong> → <strong>"Create Key"</strong> tıkla</div>
       </div>
       <div class="api-step">
         <div class="step-num">3</div>
-        <div class="step-text">Oluşan anahtarı kopyala, aşağıya yapıştır</div>
+        <div class="step-text">Anahtarı kopyala, aşağıya yapıştır</div>
       </div>
     </div>
 
@@ -1344,9 +1377,43 @@
   let countdownSeconds = 28 * 60 + 43;
   let scanInterval = null;
   let apiKey = localStorage.getItem('crm_api_key') || '';
+  let selectedAI = localStorage.getItem('crm_ai_provider') || 'claude';
 
   // Sayfa yüklenince API key durumunu kontrol et
   // ─── API MODAL ───
+  function selectAI(provider) {
+    selectedAI = provider;
+    document.querySelectorAll('.ai-option').forEach(o => o.classList.remove('selected'));
+    document.getElementById('opt-' + provider).classList.add('selected');
+    updateAISteps(provider);
+    document.getElementById('apiKeyInput').value = '';
+    document.getElementById('apiStatusBox').className = 'api-status-box';
+  }
+
+  function updateAISteps(provider) {
+    const steps = {
+      claude: {
+        placeholder: 'sk-ant-api03-...',
+        s1: '<strong>console.anthropic.com</strong> adresine git ve ücretsiz hesap aç',
+        s2: 'Sol menüden <strong>"API Keys"</strong> → <strong>"Create Key"</strong> tıkla'
+      },
+      gemini: {
+        placeholder: 'AIza...',
+        s1: '<strong>aistudio.google.com</strong> adresine git ve Google hesabınla giriş yap',
+        s2: '<strong>"Get API Key"</strong> → <strong>"Create API key"</strong> tıkla — tamamen ücretsiz!'
+      },
+      openai: {
+        placeholder: 'sk-proj-...',
+        s1: '<strong>platform.openai.com</strong> adresine git ve hesap aç',
+        s2: 'Sağ üstte profil → <strong>"API Keys"</strong> → <strong>"Create new secret key"</strong>'
+      }
+    };
+    const s = steps[provider];
+    document.getElementById('apiKeyInput').placeholder = s.placeholder;
+    document.getElementById('step1text').innerHTML = s.s1;
+    document.getElementById('step2text').innerHTML = s.s2;
+  }
+
   function toggleApiModal() {
     const modal = document.getElementById('apiModal');
     modal.classList.toggle('open');
@@ -1357,16 +1424,27 @@
 
   function saveApiKey() {
     const key = document.getElementById('apiKeyInput').value.trim();
-    if (!key.startsWith('sk-ant-')) {
-      showApiStatus('error', '❗ Geçersiz anahtar — "sk-ant-" ile başlamalı');
+    if (!key) { showApiStatus('error', '❗ API key gir'); return; }
+
+    const validators = {
+      claude: k => k.startsWith('sk-ant-'),
+      gemini: k => k.startsWith('AIza') || k.length > 20,
+      openai: k => k.startsWith('sk-')
+    };
+
+    if (!validators[selectedAI](key)) {
+      const hints = { claude: '"sk-ant-" ile başlamalı', gemini: '"AIza" ile başlamalı', openai: '"sk-" ile başlamalı' };
+      showApiStatus('error', '❗ Geçersiz anahtar — ' + hints[selectedAI]);
       return;
     }
+
     apiKey = key;
     localStorage.setItem('crm_api_key', key);
+    localStorage.setItem('crm_ai_provider', selectedAI);
     updateApiStatus(true);
-    showApiStatus('success', '✅ API Key kaydedildi!');
+    showApiStatus('success', '✅ ' + selectedAI.toUpperCase() + ' API Key kaydedildi!');
     setTimeout(() => toggleApiModal(), 1500);
-    showToast('✅ Yapay zeka aktif!');
+    showToast('✅ ' + (selectedAI === 'claude' ? 'Claude' : selectedAI === 'gemini' ? 'Gemini' : 'ChatGPT') + ' aktif!');
   }
 
   async function testApiKey() {
@@ -1375,20 +1453,32 @@
     showApiStatus('', '⏳ Test ediliyor...');
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-allow-browser': 'true' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 10,
-          messages: [{ role: 'user', content: 'Merhaba' }]
-        })
-      });
+      let res;
+      if (selectedAI === 'claude') {
+        res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-allow-browser': 'true' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 10, messages: [{ role: 'user', content: 'Merhaba' }] })
+        });
+      } else if (selectedAI === 'gemini') {
+        res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + key, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'Merhaba' }] }] })
+        });
+      } else if (selectedAI === 'openai') {
+        res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 10, messages: [{ role: 'user', content: 'Merhaba' }] })
+        });
+      }
+
       if (res.ok) {
         showApiStatus('success', '✅ API Key çalışıyor! Yapay zeka hazır.');
       } else {
         const err = await res.json();
-        showApiStatus('error', '❗ Hata: ' + (err.error?.message || 'Geçersiz key'));
+        showApiStatus('error', '❗ ' + (err.error?.message || 'Geçersiz key'));
       }
     } catch {
       showApiStatus('error', '❗ Bağlantı hatası — internet bağlantını kontrol et');
@@ -1554,34 +1644,37 @@
         return;
       }
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-allow-browser': 'true' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `Sen ÇRM Haber adlı Çorum'un yerel Instagram haber sayfasının editörüsün.
+      const prompt = `Sen ${document.getElementById('settingPageName')?.value || 'ÇRM Haber'} adlı yerel Instagram haber sayfasının editörüsün.\n\nAşağıdaki haber başlığı için Instagram paylaşım açıklaması yaz:\n\nBaşlık: "${title}"\nKategori: ${selectedCategory}\n\nKurallar:\n- Türkçe yaz, samimi ve akıcı ol\n- 3-4 cümle max (Instagram için kısa)\n- Emoji kullan ama abartma\n- Sona "Takip edin 👉 ${document.getElementById('settingHandle')?.value || '@crmhaber'}" ekle\n- Merak uyandır, okuyucuyu çek\n- Sadece açıklama metnini yaz, başka açıklama ekleme`;
 
-Aşağıdaki haber başlığı için Instagram paylaşım açıklaması yaz:
+      let response, text = '';
 
-Başlık: "${title}"
-Kategori: ${selectedCategory}
+      if (selectedAI === 'claude') {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-allow-browser': 'true' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+        });
+        const d = await response.json();
+        text = d.content?.[0]?.text || '';
 
-Kurallar:
-- Türkçe yaz, samimi ve akıcı ol
-- 3-4 cümle max (Instagram için kısa)
-- Emoji kullan ama abartma
-- Sona "Takip edin 👉 @crmhaber" ekle
-- Merak uyandır, okuyucuyu çek
-- Sadece açıklama metnini yaz, başka açıklama ekleme`
-          }]
-        })
-      });
+      } else if (selectedAI === 'gemini') {
+        response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const d = await response.json();
+        text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-      const data = await response.json();
-      const text = data.content?.[0]?.text || '';
+      } else if (selectedAI === 'openai') {
+        response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+        });
+        const d = await response.json();
+        text = d.choices?.[0]?.message?.content || '';
+      }
 
       if (text) {
         captionEl.textContent = text;
@@ -1879,6 +1972,13 @@ Kategori: ${cat}
   window.addEventListener('load', () => {
     if (apiKey) updateApiStatus(true);
     loadSettings();
+    // AI seçimini geri yükle
+    if (selectedAI) {
+      document.querySelectorAll('.ai-option').forEach(o => o.classList.remove('selected'));
+      const opt = document.getElementById('opt-' + selectedAI);
+      if (opt) opt.classList.add('selected');
+      updateAISteps(selectedAI);
+    }
   });
 
   // ─── PHOTO UPLOAD ───
